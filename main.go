@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -18,9 +19,10 @@ type config struct {
 }
 
 type flags struct {
-	route string
-	json  bool
-	form  bool
+	route  string
+	json   bool
+	form   bool
+	method string
 }
 
 func loadConfig() {
@@ -62,10 +64,10 @@ func loadConfig() {
 }
 
 func (f *flags) loadFlags() {
-	flag.StringVar(&f.route, "r", "/", "add a route to your root domain - ex. /posts")
+	flag.StringVar(&f.route, "r", "/", "add a route to the end of the root domain - ex. /posts")
 	flag.BoolVar(&f.json, "j", false, "specifies the POST request to use Content-Type application/json")
 	flag.BoolVar(&f.form, "f", false, "specifies the POST request to use Content-Type multipart/form-data")
-	flag.Parse()
+	flag.StringVar(&f.method, "m", "GET", "specify the method of the request")
 }
 
 func main() {
@@ -73,34 +75,23 @@ func main() {
 	app_flags := flags{}
 	app_flags.loadFlags()
 	loadConfig()
+	flag.Parse()
 
-	switch os.Args[1] {
-	case "get":
+	fmt.Printf("Config loaded: %s, %s", viper.Get("domain"), viper.Get("port"))
+
+	switch app_flags.method {
+	case "GET":
 		{
-			fmt.Println(app_flags.route)
-			domain := viper.GetString("domain")
-			port := viper.GetString("port")
-
-			resp, err := http.Get(domain + ":" + port)
+			url := fmt.Sprintf("%s:%s%s", viper.Get("domain"), viper.Get("port"), app_flags.route)
+			resp, err := http.Get(url)
 			if err != nil {
-				fmt.Println(err)
-				return
+				log.Fatal(err)
 			}
 			val, err := io.ReadAll(resp.Body)
 			if err != nil {
-				fmt.Println(err)
-				return
+				log.Fatal(err)
 			}
-			fmt.Println(val)
-
-		}
-	case "post":
-		{
-
-		}
-	case "del":
-		{
-
+			fmt.Println(string(val))
 		}
 	}
 }
