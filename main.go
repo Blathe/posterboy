@@ -1,121 +1,106 @@
 package main
 
 import (
+	"bufio"
+	"flag"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
+	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	"github.com/spf13/viper"
 )
 
-type domain struct {
-	url string
+type config struct {
+	Domain string `toml:"domain"`
+	Port   string `toml:"port"`
 }
 
-type model struct {
-	choices  []string         // items on the to-do list
-	cursor   int              // which to-do list item our cursor is pointing at
-	selected map[int]struct{} // which to-do items are selected
+type flags struct {
+	route string
+	json  bool
+	form  bool
 }
 
-func initialModel() model {
-	return model{
-		// Our to-do list is a grocery list
-		choices: []string{"Buy carrots", "Buy celery", "Buy kohlrabi"},
-
-		// A map which indicates which choices are selected. We're using
-		// the  map like a mathematical set. The keys refer to the indexes
-		// of the `choices` slice, above.
-		selected: make(map[int]struct{}),
-	}
-}
-
-func (m model) Init() tea.Cmd {
-	// Just return `nil`, which means "no I/O right now, please."
-	return nil
-}
-
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-
-	// Is it a key press?
-	case tea.KeyMsg:
-
-		// Cool, what was the actual key pressed?
-		switch msg.String() {
-
-		// These keys should exit the program.
-		case "ctrl+c", "q":
-			return m, tea.Quit
-
-		// The "up" and "k" keys move the cursor up
-		case "up", "k":
-			if m.cursor > 0 {
-				m.cursor--
+func loadConfig() {
+	viper.SetConfigName("config") // name of config file (without extension)
+	viper.SetConfigType("toml")   // REQUIRED if the config file does not have the extension in the name
+	viper.AddConfigPath(".")      // look for config in the working directory
+	if err := viper.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+			fmt.Println("Looks like this is your first time using PosterBoy. Let's get some stuff set up...")
+			fmt.Println("Please enter a base domain (ex. 'http://localhost'):")
+			reader := bufio.NewReader(os.Stdin)
+			// ReadString will block until the delimiter is entered
+			input, err := reader.ReadString('\n')
+			if err != nil {
+				fmt.Println("An error occured while reading input. Please try again", err)
+				return
 			}
-
-		// The "down" and "j" keys move the cursor down
-		case "down", "j":
-			if m.cursor < len(m.choices)-1 {
-				m.cursor++
+			input = strings.TrimSuffix(input, "\n")
+			viper.Set("domain", input)
+			fmt.Println("Please enter a port (ex. '8080'):")
+			reader = bufio.NewReader(os.Stdin)
+			// ReadString will block until the delimiter is entered
+			input, err = reader.ReadString('\n')
+			if err != nil {
+				fmt.Println("An error occured while reading input. Please try again", err)
+				return
 			}
+			input = strings.TrimSuffix(input, "\n")
+			viper.Set("port", input)
 
-		// The "enter" key and the spacebar (a literal space) toggle
-		// the selected state for the item that the cursor is pointing at.
-		case "enter", " ":
-			_, ok := m.selected[m.cursor]
-			if ok {
-				delete(m.selected, m.cursor)
-			} else {
-				m.selected[m.cursor] = struct{}{}
-			}
+			viper.SafeWriteConfig()
+
+			fmt.Println("Awesome. Your config is all set!")
+		} else {
+			// Config file was found but another error was produced
+			fmt.Println("An error has occured...")
 		}
 	}
-
-	// Return the updated model to the Bubble Tea runtime for processing.
-	// Note that we're not returning a command.
-	return m, nil
 }
 
-func (m model) View() string {
-	// The header
-	s := "What should we buy at the market?\n\n"
-
-	// Iterate over our choices
-	for i, choice := range m.choices {
-
-		// Is the cursor pointing at this choice?
-		cursor := " " // no cursor
-		if m.cursor == i {
-			cursor = ">" // cursor!
-		}
-
-		// Is this choice selected?
-		checked := " " // not selected
-		if _, ok := m.selected[i]; ok {
-			checked = "x" // selected!
-		}
-
-		// Render the row
-		s += fmt.Sprintf("%s [%s] %s\n", cursor, checked, choice)
-	}
-
-	// The footer
-	s += "\nPress q to quit.\n"
-
-	// Send the UI for rendering
-	return s
+func (f *flags) loadFlags() {
+	flag.StringVar(&f.route, "r", "/", "add a route to your root domain - ex. /posts")
+	flag.BoolVar(&f.json, "j", false, "specifies the POST request to use Content-Type application/json")
+	flag.BoolVar(&f.form, "f", false, "specifies the POST request to use Content-Type multipart/form-data")
+	flag.Parse()
 }
 
 func main() {
-	if len(os.Args) == 1 {
-		fmt.Println("You need to supply a base domain to use this tool, for example: pb http://localhost:8080")
-		return
-	} else {
-		fmt.Println(os.Args[1])
-	}
-	p := tea.NewProgram(initialModel())
-	if _, err := p.Run(); err != nil {
-		fmt.Printf("Alas, there's been an error: %v", err)
-		os.Exit(1)
+
+	app_flags := flags{}
+	app_flags.loadFlags()
+	loadConfig()
+
+	switch os.Args[1] {
+	case "get":
+		{
+			fmt.Println(app_flags.route)
+			domain := viper.GetString("domain")
+			port := viper.GetString("port")
+
+			resp, err := http.Get(domain + ":" + port)
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+			val, err := io.ReadAll(resp.Body)
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+			fmt.Println(val)
+
+		}
+	case "post":
+		{
+
+		}
+	case "del":
+		{
+
+		}
 	}
 }
